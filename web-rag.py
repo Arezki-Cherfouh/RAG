@@ -4,7 +4,7 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 
 # ── Config ──────────────────────────────────────────────
 import os
-os.environ["TAVILY_API_KEY"] = "your-tavily-api-key-here"  # Replace with your key
+os.environ["TAVILY_API_KEY"] = "your-tavily-api-key"  # Replace with your key
 
 CHAT_MODEL = "llama3.2:3b"
 TOP_K      = 3
@@ -12,18 +12,13 @@ TOP_K      = 3
 # ── Init ─────────────────────────────────────────────────
 tavily = TavilySearchResults(
     max_results=TOP_K,
-    include_answer=True,        # get Tavily's own summary
+    include_answer=True,
     include_raw_content=False,
 )
 
 # ── Retrieve ──────────────────────────────────────────────
 def retrieve(query: str) -> tuple[list[dict], str]:
-    """
-    Returns:
-        sources  – list of {title, url} dicts
-        context  – combined snippet text for the LLM
-    """
-    results = tavily.invoke(query)          # list of dicts from Tavily
+    results = tavily.invoke(query)
     sources = []
     chunks  = []
 
@@ -42,24 +37,21 @@ def retrieve(query: str) -> tuple[list[dict], str]:
 def rag_chat(user_query: str):
     sources, context = retrieve(user_query)
 
-    # Build a numbered source index for the LLM to reference
     source_index = "\n".join(
         f"[{i+1}] title: {s['title']} | url: {s['url']}"
         for i, s in enumerate(sources)
     )
 
     system_prompt = f"""You are a helpful research assistant.
-Answer the user's question using ONLY the web sources provided below.
-If the information is not in the sources, say "I couldn't find relevant information online."
-Do NOT use outside knowledge.
 
-IMPORTANT FORMATTING RULES:
-- Write your answer as a series of short statements (1-2 sentences each).
-- After EVERY statement, on its own line, print a JSON object for the source(s) used for that statement.
-- The JSON must use this exact format (one object per line, no array wrapper):
+Answer the user's question naturally. Use the web sources below as your primary knowledge.
+
+RULES:
+- Answer conversationally — no forced structure or bullet points unless it genuinely helps clarity.
+- If your answer is based on the web sources, append the relevant source(s) as JSON at the very end, one per line:
   {{"title": "...", "url": "..."}}
-- Only cite sources that actually support that specific statement.
-- Do not group all citations at the end.
+- If the web sources are not relevant to the question, answer from your own knowledge but begin your response with "I'm not entirely sure, but..." and do NOT append any JSON.
+- Only include sources that genuinely support your answer.
 
 Source index:
 {source_index}
@@ -67,7 +59,6 @@ Source index:
 Web Content:
 {context}"""
 
-    # ── Get full response (no stream, so we can print cleanly) ──
     print("\n📝 Answer:\n")
     response = ollama.chat(
         model=CHAT_MODEL,
@@ -79,13 +70,13 @@ Web Content:
     )
     answer = response["message"]["content"]
 
-    # ── Pretty-print: colorize JSON citation lines ──
+    # ── Print answer, highlight JSON citation lines in grey ──
     for line in answer.splitlines():
         stripped = line.strip()
         if stripped.startswith("{") and stripped.endswith("}"):
             try:
                 parsed = json.loads(stripped)
-                print(f"  \033[90m{json.dumps(parsed)}\033[0m")   # dim grey
+                print(f"  \033[90m{json.dumps(parsed)}\033[0m")  # dim grey
             except json.JSONDecodeError:
                 print(line)
         else:
